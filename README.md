@@ -70,6 +70,29 @@ Goal: close the gap to X-ASR (6.66 CV / 6.13 Taiwan-Tongues) and make zh/en code
 - Add an L2/cosine loss between the student encoder and the teacher's ASR encoder (1,280-dim Transformer) through a linear projection, λ≈0.1. Downsampled fp16 features precomputed on ~300 h (~100 GB).
 - Caveat: the student is causal/streaming while the teacher encoder sees full context. Target top layers only and measure the gain before generalizing.
 
+## Phase 4b: sequence-level RL / risk minimization (after Phase 2–3 converge)
+Cross-entropy on pseudo-labels optimizes token likelihood. RL instead optimizes what we measure (CER/MER, English-term accuracy, latency) on the student's **own** hypotheses, so exposure bias and CS errors are trained directly.
+
+**Method: MWER / minimum Bayes risk for RNNT** (GRPO-style group sampling):
+- For each utterance, sample K=4–8 hypotheses with streaming beam search or sampling (T≈1.0) from the student.
+- Reward per hypothesis, computed against the teacher pseudo-label (or human text where commercially usable):
+  - `r = -MER` (zh CER + en WER);
+  - `+ α·` English-word F1 (CS, rare tech terms);
+  - `- β·` script/language errors (wrong script, translation, hallucinated repetitions);
+  - `- γ·` emission latency (mean token delay vs forced alignment, FastEmit-style), so streaming does not get slower.
+- Advantage = r − group mean (no critic). Loss = −Σ A·log P_RNNT(hyp), with the RNNT log-likelihood of each hypothesis computed exactly.
+- Keep the RNNT loss on the reference (λ≈0.5–1) plus a KL-to-reference-model penalty to prevent drift. Low lr (1e-6 – 3e-6), short (~1 epoch on 100–300 h).
+
+**Data**: focus on hard cases: CS clips, clips where the v4 student and teacher disagree (CER 0.1–0.5), and noisy/long natural speech. Commercial-license data only (see policy).
+
+**Teacher as a reward model (optional)**: rescore the student's N-best with the teacher LLM's log-likelihood (the teacher's decoder conditioned on audio) as a soft reward, instead of only exact match with one pseudo-label. This avoids over-fitting the teacher's single hypothesis. It is costly (one teacher forward per hypothesis), so use it only on a subset.
+
+**Guards**: evaluate every N steps on CV/TT/CS/Libri/FLEURS-fr at 160 and 560 ms chunks; stop on any regression > 0.3 abs. Watch for reward hacking: empty or short outputs (length-normalized reward, deletion penalty).
+
+**Expected gain**: MWER-type training typically gives a few percent relative WER on top of CE. The larger value here is CS/English-term recall and robustness to teacher errors. Go/no-go: ≥ 3% relative MER on the CS eval with no regression elsewhere.
+
+**Implementation**: NeMo has no ready RNNT-MWER recipe, so we write a custom Lightning step. Sampling uses NeMo greedy/beam batch decoding (`return_hypotheses`); the hypothesis log-prob is `-rnnt_loss(hyp_as_target)`. Cost is ~K× decoding plus K RNNT losses per batch, so plan 2–4 days on GPU1.
+
 ## Phase 5: iterations
 - Hard mining: where v4 and the teacher diverge most, add more data of that kind and relabel.
 - Context biasing (NeMo GPU-PB) for English tech vocabulary at deployment.
