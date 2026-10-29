@@ -130,7 +130,7 @@ Same clips (CER, t2s normalization, punctuation removed):
 - **Decision**: GO for distillation, with a mandatory v3/teacher agreement filter at 0.5. Gains are largest on natural speech (TT/IVOD/lectures) and small on short read speech (CV).
 - These scores predate the P4 prompt; re-evaluation with P4 is pending.
 
-## IVOD pseudo-labeling (running since 2026-10-29)
+## IVOD pseudo-labeling (stopped 2026-10-29: CC BY-NC, excluded; kept as a record of the prompt study)
 - Source: `OpenFormosa/parliament`, 308,521 clips, **1,299 h**, 10–20 s, sessions 2020-09 → 2026-04. **License CC BY-NC 4.0** (non-commercial).
 - Human text is edited and loosely aligned at clip boundaries (median CER 0.22 vs upstream ASR). It is used as a **filtering signal**, not as a target.
 - **Unintended translation**: with `-l zh-TW` or the official prompts, the teacher translates 20–44% of IVOD clips into English. Test on 200 clips:
@@ -148,28 +148,29 @@ Same clips (CER, t2s normalization, punctuation removed):
 - Next: re-evaluate CV/TT with P4, then apply the combined filter (agreement with human text and with v3).
 
 ## Data plan (inventory 2026-10-29)
-Downloading now (~25 GB): `ky552/ML2021_ASR_ST`, `andybi7676/ntuml2021_long`, `voidful/hung-yi_lee` (NTU ML lectures, Taiwan Mandarin with dense English terms), `DynamicSuperb/Code-switchSpeechRecognition_NTUML2021` (CS eval), `adi-gov-tw/Taiwan-Tongues-ASR-CE-dataset-en` (TW-accented English replay).
+Superseded by the licensing policy below: NTU ML lectures and Taiwan-Tongues were downloaded then excluded.
 
 Next candidates: `espnet/yodas2` zh000 (60 GB, CC-BY-3.0, mostly zh-CN, needs TW filtering), `georgechang8/ASCEND_CLEAN` (CS eval, HK accent), GigaSpeech M + LibriSpeech-360 (English replay), `formospeech/matbn` (TW broadcast, gated).
 
 Skipped: WorldSpeech zh_tw and `lianghsun/ly-ivod-asr-zhtw` (likely duplicates of the parliament audio), Emilia ZH (size, zh-CN accent).
 
 ## Licensing policy (target: v4 free for commercial use)
-Only data whose license allows commercial training is used for training. NC/unclear sources may be used for **evaluation only**.
+**Rule: only data whose license explicitly allows commercial use is used for training or pseudo-labeling.** Anything NC, gated research-only, "other" without clear terms, or with unclear audio rights is excluded. Already-downloaded excluded data was moved to `$STORE/excluded/` and is not used by any script.
 
-| Source | License | Use |
+| Source | License | Status |
 |---|---|---|
-| Common Voice zh-TW | CC0 | train + eval |
-| LibriSpeech | CC BY 4.0 | train (attribution) |
-| yodas2 | CC BY 3.0 | train (attribution) |
-| ASCEND_CLEAN | CC BY-SA 4.0 | eval only (share-alike risk on weights) |
-| `OpenFormosa/parliament` (IVOD) | **CC BY-NC 4.0** | **excluded from training**; labeling stopped after 4 shards |
-| NTU ML 2021 lectures (`ky552/ML2021_ASR_ST` MIT tag, `voidful/hung-yi_lee` other) | audio rights unclear (YouTube lectures) | eval only until the lecturer's permission is confirmed |
-| Taiwan-Tongues (`adi-gov-tw/*`) | "other", follows upstream project terms | to verify before training |
-| GigaSpeech | metadata Apache-2.0, audio terms non-commercial | excluded |
-| MATBN | gated, research license | excluded |
-| Teacher outputs (Nemotron-3.5-Transcribe) | OpenMDW-1.1 | pseudo-labels usable |
+| Common Voice zh-TW / en | CC0 | ✅ train |
+| LibriSpeech | CC BY 4.0 | ✅ train (attribution) |
+| yodas2 | CC BY 3.0 | ✅ train (attribution) |
+| Teacher outputs (Nemotron-3.5-Transcribe) | OpenMDW-1.1 | ✅ pseudo-labels |
+| ASCEND_CLEAN | CC BY-SA 4.0 | ⚠️ eval only (not in training, to avoid share-alike on weights) |
+| Taiwan-Tongues (`adi-gov-tw/*`) | "other", unclear | ❌ excluded from training; TT100 kept only as a local benchmark for comparison with v3 |
+| `OpenFormosa/parliament` (IVOD) | CC BY-NC 4.0 | ❌ excluded |
+| NTU ML 2021 lectures (`ky552/ML2021_ASR_ST`, `andybi7676/ntuml2021_long`, `voidful/hung-yi_lee`, `DynamicSuperb/...NTUML2021`) | unclear audio rights | ❌ excluded |
+| GigaSpeech | non-commercial audio terms | ❌ excluded |
+| MATBN | research license | ❌ excluded |
 
-Open points:
-- **v3 was itself fine-tuned on IVOD** (NC). For a clean commercial v4, restart from the NVIDIA base streaming 0.6B (check its license) instead of v3, or get legal clearance.
-- Main data gap: commercially usable zh-TW natural speech and CS audio. Candidates: yodas2 (CC BY, filter TW accent / CS), Common Voice, synthetic CS via commercially licensed TTS.
+Consequences:
+- **v3 was fine-tuned on IVOD (NC)**, so v4 restarts from the NVIDIA base streaming 0.6B (license to confirm), not from v3. v3 stays as a comparison baseline and filter signal only.
+- New data sources: Common Voice zh-TW/en, yodas2 zh/en (filtered for TW accent and CS, pseudo-labeled by the teacher), LibriSpeech, and synthetic CS from a commercially licensed TTS.
+- A commercially clean CS eval set must be built (e.g. from yodas2 CS clips, hand-corrected).
