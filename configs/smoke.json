@@ -1,0 +1,5 @@
+{"init": "nvidia/nemotron-3.5-asr-streaming-0.6b", "init_prompt_from": {"zh-TW": "zh-CN"},
+ "out_dir": "/media/big-disk-2/distil-zhtw/runs/smoke", "device": "cpu",
+ "train": [{"path": "/media/big-disk-2/distil-zhtw/manifests/cv_zhtw.jsonl", "weight": 1}, {"path": "/media/big-disk-2/distil-zhtw/manifests/yodas2_tw.jsonl", "weight": 1}],
+ "eval": {"cv": "/media/big-disk-2/distil-zhtw/eval/cv20.jsonl", "tt": "/media/big-disk-2/distil-zhtw/eval/tt10.jsonl"},
+ "lr": 1e-5, "warmup": 2, "steps": 3, "max_batch_sec": 20, "eval_every": 3, "log_every": 1}
