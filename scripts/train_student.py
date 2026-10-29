@@ -9,7 +9,7 @@
 
 Usage: python3 scripts/train_student.py config.json   (see configs/)
 """
-import json, math, os, random, sys, time
+import json, math, os, random, re, sys, time
 from pathlib import Path
 import numpy as np
 import soundfile as sf
@@ -56,8 +56,16 @@ LMAP = lambda l: cfg.get("lang_map", {}).get(l, cfg.get("force_lang") or l)
 UNK = tok.unk_token_id
 
 
+# The HF tokenizer.json (BPE merges converted from SentencePiece) segments Latin text differently from
+# the model's native SentencePiece -> wrong English targets. Encode with the original .model from the .nemo.
+SP = None
+if cfg.get("sp_model"):
+    import sentencepiece as spm
+    SP = spm.SentencePieceProcessor(model_file=cfg["sp_model"])
+
+
 def encode(text):
-    ids = tok(text, add_special_tokens=False).input_ids
+    ids = SP.encode(text) if SP else tok(text, add_special_tokens=False).input_ids
     return ids if ids and (UNK is None or ids.count(UNK) <= 0.05 * len(ids)) else None
 
 
@@ -136,8 +144,13 @@ def evaluate(lang="zh-TW", lookahead=None):
             with torch.autocast(dev, dtype=torch.bfloat16):
                 out = model.generate(**x, return_dict_in_generate=True)
             h = proc.batch_decode(out.sequences, skip_special_tokens=True)[0]
-            refs.append(norm(r["text"]) or "x"); hyps.append(norm(h))
-        res[name] = round(100 * jiwer.cer(refs, hyps), 2)
+            if r.get("lang", "").startswith("en"):  # English: word error rate
+                w = lambda t: " ".join(re.sub(r"[^a-z' ]", " ", t.lower()).split())
+                refs.append(w(r["text"]) or "x"); hyps.append(w(h))
+            else:
+                refs.append(norm(r["text"]) or "x"); hyps.append(norm(h))
+        en = rows[0].get("lang", "").startswith("en")
+        res[name] = round(100 * (jiwer.wer if en else jiwer.cer)(refs, hyps), 2)
     model.train(); return res
 
 
