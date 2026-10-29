@@ -130,3 +130,23 @@ Downloading now (~25 GB): `ky552/ML2021_ASR_ST`, `andybi7676/ntuml2021_long`, `v
 Next candidates: `espnet/yodas2` zh000 (60 GB, CC-BY-3.0, mostly zh-CN, needs TW filtering), `georgechang8/ASCEND_CLEAN` (CS eval, HK accent), GigaSpeech M + LibriSpeech-360 (English replay), `formospeech/matbn` (TW broadcast, gated).
 
 Skipped: WorldSpeech zh_tw and `lianghsun/ly-ivod-asr-zhtw` (likely duplicates of the parliament audio), Emilia ZH (size, zh-CN accent).
+
+## Licensing policy (target: v4 free for commercial use)
+Only data whose license allows commercial training is used for training. NC/unclear sources may be used for **evaluation only**.
+
+| Source | License | Use |
+|---|---|---|
+| Common Voice zh-TW | CC0 | train + eval |
+| LibriSpeech | CC BY 4.0 | train (attribution) |
+| yodas2 | CC BY 3.0 | train (attribution) |
+| ASCEND_CLEAN | CC BY-SA 4.0 | eval only (share-alike risk on weights) |
+| `OpenFormosa/parliament` (IVOD) | **CC BY-NC 4.0** | **excluded from training**; labeling stopped after 4 shards |
+| NTU ML 2021 lectures (`ky552/ML2021_ASR_ST` MIT tag, `voidful/hung-yi_lee` other) | audio rights unclear (YouTube lectures) | eval only until the lecturer's permission is confirmed |
+| Taiwan-Tongues (`adi-gov-tw/*`) | "other", follows upstream project terms | to verify before training |
+| GigaSpeech | metadata Apache-2.0, audio terms non-commercial | excluded |
+| MATBN | gated, research license | excluded |
+| Teacher outputs (Nemotron-3.5-Transcribe) | OpenMDW-1.1 | pseudo-labels usable |
+
+Open points:
+- **v3 was itself fine-tuned on IVOD** (NC). For a clean commercial v4, restart from the NVIDIA base streaming 0.6B (check its license) instead of v3, or get legal clearance.
+- Main data gap: commercially usable zh-TW natural speech and CS audio. Candidates: yodas2 (CC BY, filter TW accent / CS), Common Voice, synthetic CS via commercially licensed TTS.
