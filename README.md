@@ -1,123 +1,132 @@
-# Plan v2 : distiller Nemotron-3.5-Transcribe-30B-A4B dans le modèle streaming 0.6B, pour le zh-TW et le code-switching zh-TW/en
+# Distilling Nemotron-3.5-Transcribe-30B-A4B into a streaming 0.6B ASR for zh-TW and zh-TW/en code-switching
 
-Point de départ : le modèle de l'itération précédente, `Luigi/nemotron-3.5-asr-streaming-0.6b-zhtw` (v3, CV zh-TW CER 9.81).
-Objectif : combler l'écart avec X-ASR (6.66 CV / 6.13 Taiwan-Tongues) et rendre le code-switching zh/en (CS) robuste en streaming.
+Starting point: the previous iteration, `Luigi/nemotron-3.5-asr-streaming-0.6b-zhtw` (v3, CV zh-TW CER 9.81).
+Goal: close the gap to X-ASR (6.66 CV / 6.13 Taiwan-Tongues) and make zh/en code-switching (CS) robust in streaming.
 
-## Contexte vérifié (2026-10-29)
-| Élément | État |
+## Verified context (2026-10-29)
+| Item | Status |
 |---|---|
-| Teacher | `nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B` : BF16 de 67,5 Go, licence OpenMDW-1.1. Mandarin supporté, CS explicitement supporté. Modèle offline (SALM). |
-| Teacher sur 5090 | La carte officielle indique **NVFP4 uniquement** sur RTX 5090 (vLLM 0.32 / HF / GGML). Les repos `nvidia/...-FP8` et `-NVFP4` répondent « not found » avec notre token (pas encore publics ?). |
-| Alternatives teacher | `AtomicChat/...-GGUF` : variante AD-NVFP4 de 19,7 Go plus l'encodeur F16 de 1,7 Go, à servir via `~/llama.cpp` (mtmd). Les repos `nativ-community/*` sont en MLX, **inutilisables** (Apple). |
-| Élève | Le v3 ci-dessus. Tokenizer de 13 087 tokens : 6,3 % des caractères traditionnels ne passent pas l'aller-retour. Cibles en **simplifié**, puis OpenCC `s2t`. |
-| Matériel | **GPU1 seul** (5090, 32 Go), 249 Go de RAM, 32 cœurs. Stockage : `/media/big-disk-2/distil-zhtw` (422 Go libres). L'itération précédente utilisait 2 GPU, il faut donc prévoir environ 2× plus de temps mur. |
-| Logiciels | torch 2.10/cu128 dans le Python système. `~/NeMo` (fb20f06, 2026-07) est présent mais pas installé. vLLM absent. Prévoir un venv `uv` dédié sous `$STORE`. |
+| Teacher | `nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B`: 67.5 GB BF16, OpenMDW-1.1 license. Mandarin supported, CS explicitly supported. Offline model (SALM). |
+| Teacher on a 5090 | The official card lists **NVFP4 only** on RTX 5090 (vLLM 0.32 / HF / GGML). The `nvidia/...-FP8` and `-NVFP4` repos return "not found" with our token (not public yet?). |
+| Teacher actually used | `AtomicChat/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF`: AD-NVFP4 decoder (19.7 GB) + F16 encoder (1.7 GB), run with [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) (CUDA, sm_120). The `nativ-community/*` repos are MLX (Apple only) and unusable here. |
+| Student | v3 above. 13,087-token tokenizer: 6.3% of Traditional characters fail a round-trip. Targets are **Simplified**, then OpenCC. |
+| Hardware | **GPU1 only** (RTX 5090, 32 GB), 249 GB RAM, 32 cores. Storage: `/media/big-disk-2/distil-zhtw`. The previous iteration used 2 GPUs, so expect ~2× wall-clock time. |
 
-## Leçons de v3 qui orientent ce plan
-1. **Le filtre « deux teachers d'accord » a jeté 41 % de l'IVOD.** Un teacher unique bien plus fort, qui gère nativement le CS, permet de garder beaucoup plus de données. Il faut tout de même un garde-fou contre les hallucinations du LLM.
-2. **Dérive de l'anglais et du français** : on conserve le replay multilingue et la phase de réparation, en ajoutant le français au replay.
-3. **Le tokenizer est le plafond pour le traditionnel.** C'est la décision clé, traitée en Phase 3.
-4. **Aucune métrique CS n'existe encore.** Il faut construire le jeu d'éval en premier.
+## Lessons from v3 that shape this plan
+1. **The "two teachers agree" filter discarded 41% of IVOD.** A single, much stronger teacher with native CS support lets us keep far more data, but a guard against LLM hallucination is still required.
+2. **English and French drift**: keep multilingual replay and the repair phase, and add French to the replay.
+3. **The tokenizer is the ceiling for Traditional output.** This is the key decision, handled in Phase 3.
+4. **No CS metric exists yet.** The CS eval set must be built first.
 
-## Phase 0 : environnement et baselines (1 à 2 j)
-- venv `uv` : `nemo_toolkit[asr]` depuis `~/NeMo` (à mettre à jour) et vLLM 0.32. Tester d'abord le teacher via vLLM NVFP4. Si les poids NVFP4 restent inaccessibles, passer au GGUF AD-NVFP4 avec llama.cpp. Dernier recours : quantifier nous-mêmes le BF16 avec ModelOpt NVFP4. Ça demande environ 70 Go de RAM et c'est faisable, mais lent.
-- Valider le teacher sur CV zh-TW et Taiwan-Tongues. Les scripts sont à reprendre de `~/zhtw-bench`, avec la même normalisation OpenCC que v3.
-  - **Critère go/no-go** : le teacher doit faire mieux que X-ASR (moins de 6,5 CER). Sinon, la distillation n'apporte rien sur le zh pur. On la recentre alors sur le CS, et X-ASR devient co-teacher pour le zh.
-- **Construire le jeu d'éval CS zh-TW/en** : 3 à 5 h de vrai contenu taïwanais (podcasts tech, cours, réunions), pré-transcrites par le teacher puis **corrigées à la main**. Sans ce jeu, rien n'est mesurable.
-- Métriques :
-  - MER (CER sur les caractères zh, WER sur les mots en) ;
-  - rappel et précision des mots anglais ;
-  - CER zh seul ;
-  - éval par chunk 80, 160, 560 et 1120 ms.
+## Phase 0: environment and baselines
+- Teacher served by NeMo-Speech.cpp (GGUF AD-NVFP4). Fallback: quantize BF16 ourselves with ModelOpt NVFP4 (~70 GB RAM, feasible but slow).
+- Validate the teacher on CV zh-TW and Taiwan-Tongues with the same OpenCC normalization as v3.
+  - **Go/no-go**: the teacher should beat X-ASR (< 6.5 CER). Otherwise distillation adds nothing on pure zh; refocus it on CS and use X-ASR as a co-teacher for zh.
+- **Build a zh-TW/en CS eval set**: 3–5 h of real Taiwanese content (tech podcasts, lectures, meetings), pre-transcribed by the teacher then **hand-corrected**. Candidate: `DynamicSuperb/Code-switchSpeechRecognition_NTUML2021`.
+- Metrics:
+  - MER (CER on zh characters, WER on en words);
+  - English-word recall and precision;
+  - zh-only CER;
+  - per-chunk eval at 80, 160, 560 and 1120 ms.
 
-## Phase 1 : pseudo-labeling par le teacher (~1 à 2 sem. GPU1)
-- **Sources** :
-  - IVOD 立法院 complet, sans le filtre 2-teachers (CC-BY-4.0) ;
-  - podcasts et YouTube taïwanais riches en CS, dans le respect des licences et des ToS ;
-  - le reste de CV zh-TW ;
-  - Taiwan-Tongues train.
+## Phase 1: teacher pseudo-labeling (~1–2 weeks on GPU1)
+- **Sources**:
+  - IVOD 立法院 (`OpenFormosa/parliament`, see below);
+  - CS-rich Taiwanese lectures (NTU ML 2021, see data plan), respecting licenses and ToS;
+  - the rest of CV zh-TW;
+  - Taiwan-Tongues train (zh-TW and en).
 
-  Cible : 1 500 à 2 500 h, dont au moins 30 % de CS.
-- Découpage VAD en 5 à 20 s. Prompt teacher :
-  `Audio transcription. Language: as spoken. Wording: verbatim... Formatting: punctuation and capitalization. Output: transcript only.`, à température 0, reasoning off.
-- **Filtres** :
-  - densité caractères/seconde hors norme, n-grammes répétés, sortie vide ou traduite (anglais seul sur de l'audio zh) ;
-  - log-prob moyenne du teacher sous un seuil ;
-  - contrôle croisé **léger** avec v3 (et non le 2-teachers strict) : on ne rejette que si CER(teacher, v3) dépasse 50 %, ce qui signale une hallucination probable. Les désaccords modérés sont justement les exemples utiles.
-- Stockage : texte du teacher en **traditionnel**, et texte converti `t2s` pour l'entraînement tant que le tokenizer reste inchangé.
-- Synthétique CS (au plus 15 %) : phrases zh-TW avec insertion d'anglais générées par LLM (termes tech, noms propres), puis TTS multi-locuteurs. Le TTS est optionnel, à ajouter seulement si le CS réel ne suffit pas.
+  Target: 1,500–2,500 h, at least 30% CS.
+- Segments of 5–20 s. Teacher prompt: **P4** (Chinese instruction, see results), temperature 0, reasoning off.
+- **Filters**:
+  - abnormal characters/second, repeated n-grams, empty or translated output (English-only on zh audio);
+  - mean teacher log-prob below a threshold;
+  - **light** cross-check with v3 (not strict two-teacher): reject only if CER(teacher, v3) > 0.5, which signals a likely hallucination. Moderate disagreements are exactly the useful examples;
+  - where human text exists (IVOD), agreement with it as an extra signal.
+- Storage: teacher text as produced (Simplified) plus a `s2twp` Traditional copy for when the tokenizer changes.
+- Synthetic CS (≤ 15%): LLM-generated zh-TW sentences with English insertions (tech terms, proper nouns), then multi-speaker TTS. Optional, only if real CS is insufficient.
 
-## Phase 2 : distillation en séquence sur v3 (~1 sem. GPU1)
-- Même recette NeMo que v3 : `speech_to_text_finetune.py`, la config streaming prompt, AdamW à 1e-5, bf16. Sur un seul GPU, doubler l'accumulation de gradients pour garder le batch effectif.
-- Mélange :
+## Phase 2: sequence-level distillation on top of v3 (~1 week on GPU1)
+- Same NeMo recipe as v3: `speech_to_text_finetune.py`, streaming prompt config, AdamW 1e-5, bf16. On one GPU, double gradient accumulation to keep the effective batch.
+- Mix:
 
-  | Part | Données |
+  | Share | Data |
   |---|---|
-  | 40 % | zh-TW pseudo-labels |
-  | 30 % | CS |
-  | 15 % | anglais LibriSpeech/GigaSpeech |
-  | 10 % | replay multilingue (fr/es/hi en priorité, vu les régressions) |
-  | 5 % | données humaines CV zh-TW (ancrage) |
-- Prompt de langue : en CS, comparer `zh-TW` et `auto`. Garder le mode `unified`.
-- Pondérer la perte par la confiance du teacher.
-- Phase de réparation (lr 4e-6) si l'anglais ou le français dérive, comme en v3.
+  | 40% | zh-TW pseudo-labels |
+  | 30% | CS |
+  | 15% | English (LibriSpeech/GigaSpeech, TW-accented English) |
+  | 10% | multilingual replay (fr/es/hi first, given the regressions) |
+  | 5% | human CV zh-TW (anchor) |
+- Language prompt: compare `zh-TW` vs `auto` on CS. Keep `unified` prompt mode.
+- Weight the loss by teacher confidence.
+- Repair phase (lr 4e-6) if English or French drifts, as in v3.
 
-## Phase 3 : tokenizer traditionnel (décision après la Phase 2)
-- **Option A** (défaut, peu coûteuse) : garder le simplifié plus OpenCC. Faire passer la conversion en **`s2twp`** (niveau phrase, vocabulaire TW) au lieu de `s2t`, et mesurer les erreurs d'ambiguïté (发→發/髮, 后→後/后, 台→臺/台) sur l'éval.
-- **Option B** : étendre le vocabulaire avec les caractères traditionnels manquants. Le joint/décodeur RNNT grandit ; les nouvelles lignes sont initialisées depuis le caractère simplifié correspondant, puis on fine-tune directement sur les cibles traditionnelles du teacher. Cela supprime l'étape OpenCC et ses ambiguïtés, mais demande de revérifier toutes les autres langues.
-- Critère : passer à B seulement si le taux d'erreur dû à la conversion OpenCC dépasse 1 CER absolu sur l'éval zh-TW.
+## Phase 3: Traditional-character tokenizer (decided after Phase 2)
+- **Option A** (default, cheap): keep Simplified + OpenCC, but switch the conversion to **`s2twp`** (phrase-level, Taiwan vocabulary) instead of `s2t`, and measure ambiguity errors (发→發/髮, 后→後/后, 台→臺/台) on the eval.
+- **Option B**: extend the vocabulary with the missing Traditional characters. The RNNT joint/decoder grows; new rows are initialized from the corresponding Simplified character, then fine-tuned on Traditional teacher targets. Removes the OpenCC step and its ambiguities, but every other language must be re-checked.
+- Criterion: move to B only if OpenCC-induced errors exceed 1 absolute CER on the zh-TW eval.
 
-## Phase 4 (option) : distillation des représentations
-- Ajouter une perte L2/cosinus entre l'encodeur élève et l'encodeur ASR du teacher (Transformer de 1 280 dimensions) via une projection linéaire, avec λ≈0.1. Les features fp16 sous-échantillonnées sont pré-calculées sur environ 300 h (~100 Go).
-- Point délicat : l'élève est causal/streaming alors que l'encodeur teacher voit tout le contexte. Ne viser que les couches hautes et mesurer le gain avant de généraliser.
+## Phase 4 (optional): representation distillation
+- Add an L2/cosine loss between the student encoder and the teacher's ASR encoder (1,280-dim Transformer) through a linear projection, λ≈0.1. Downsampled fp16 features precomputed on ~300 h (~100 GB).
+- Caveat: the student is causal/streaming while the teacher encoder sees full context. Target top layers only and measure the gain before generalizing.
 
-## Phase 5 : itérations
-- Hard mining : là où v4 et le teacher divergent le plus, on ajoute de la donnée de ce type et on relabellise.
-- Context biasing (NeMo GPU-PB) pour le vocabulaire tech anglais au déploiement.
+## Phase 5: iterations
+- Hard mining: where v4 and the teacher diverge most, add more data of that kind and relabel.
+- Context biasing (NeMo GPU-PB) for English tech vocabulary at deployment.
 
-## Tableau de bord cible (v4)
-| Éval | v3 | Cible v4 |
+## Target scoreboard (v4)
+| Eval | v3 | v4 target |
 |---|---|---|
 | CV zh-TW CER | 9.81 | **< 7.5** |
 | Taiwan-Tongues CER | 14.85 | **< 10** |
-| CS zh-TW/en MER (nouveau jeu) | à mesurer | −30 % relatif vs v3 |
+| CS zh-TW/en MER (new set) | to measure | −30% relative vs v3 |
 | LibriSpeech WER | 2.79 | ≤ 2.8 |
 | FLEURS fr WER | 16.15 | ≤ 15.5 |
 
-## Environnement
+## Environment
 ```bash
 source env.sh   # CUDA_VISIBLE_DEVICES=1, STORE, HF_HOME, TMPDIR
 ```
+Scripts: `scripts/prep_eval.py` (fixed eval subsets), `scripts/score.py` (CER, t2s-normalized, punctuation stripped), `scripts/run_student.py` (HF RNNT inference), `scripts/pseudolabel_parliament.py` (teacher pseudo-labeling per shard).
 
-## Résultats Phase 0 (2026-10-29) : teacher GGUF AD-NVFP4 via NeMo-Speech.cpp, GPU1
-Mêmes extraits (CER, normalisation t2s, ponctuation retirée) :
+## Phase 0 results (2026-10-29): teacher GGUF AD-NVFP4 via NeMo-Speech.cpp, GPU1
+Same clips (CER, t2s normalization, punctuation removed):
 
-| Système | CV zh-TW (120) | Taiwan-Tongues (100) |
+| System | CV zh-TW (120) | Taiwan-Tongues (100) |
 |---|---|---|
-| v3 (élève actuel) | **14.25** | 14.85 |
+| v3 (current student) | **14.25** | 14.85 |
 | Teacher, `-l zh-TW` | 26.84–28.62 | **11.90** |
-| Teacher, prompt « Mandarin TW » (P2) | 20.78 | 14.11 |
-| Teacher, prompt CS ASCEND (P1) | 40.26 | 20.37 |
+| Teacher, "Mandarin TW" English prompt (P2) | 20.78 | 14.11 |
+| Teacher, ASCEND CS prompt (P1) | 40.26 | 20.37 |
 
-- Le teacher **sort toujours du simplifié**, ce qui est compatible avec le tokenizer de l'élève.
-- Sur les clips CV courts et lus, le teacher **hallucine ou change de langue** : romanisation cantonaise/hokkien, anglais, bengali.
-- Avec le filtre d'accord CER(v3, teacher) ≤ 0.5, on garde 82–91 % des clips, et le teacher passe **devant** v3 : 5.67 vs 6.66 sur CV, 8.28 vs 12.35 sur TT.
-- **Décision** : GO pour la distillation, avec un filtre d'accord v3/teacher à 0.5 obligatoire. La plus-value est maximale sur la parole naturelle (type TT/IVOD/podcasts) et faible sur la lecture courte (CV).
-- Débit : environ 35 s par lot de 100 clips courts, chargement compris (MTP draft 7, 16 slots).
+(v3's 14.85 on Taiwan-Tongues matches its model card exactly; the CV gap vs the published 9.81 is a different 120-clip subset.)
 
-## Pseudo-labeling IVOD (en cours depuis 2026-10-29)
-- Source : `OpenFormosa/parliament`, 308 521 clips, **1 299 h**, 10 à 20 s, sessions 2020-09 → 2026-04. **Licence CC BY-NC 4.0** (non commerciale).
-- Le texte humain est édité et mal aligné aux bornes (CER médian de 0,22 vs l'ASR amont). Il sert de **signal de filtrage** et non de cible.
-- **Traduction involontaire** : avec `-l zh-TW` ou le prompt officiel, le teacher traduit en anglais 20 à 44 % des clips IVOD. Test sur 200 clips :
+- The teacher **always outputs Simplified**, which matches the student tokenizer.
+- On short read CV clips the teacher **hallucinates or switches language**: Cantonese/Hokkien romanization, English, even Bengali.
+- With an agreement filter CER(v3, teacher) ≤ 0.5, 82–91% of clips are kept and the teacher is **ahead** of v3: 5.67 vs 6.66 on CV, 8.28 vs 12.35 on TT.
+- **Decision**: GO for distillation, with a mandatory v3/teacher agreement filter at 0.5. Gains are largest on natural speech (TT/IVOD/lectures) and small on short read speech (CV).
+- These scores predate the P4 prompt; re-evaluation with P4 is pending.
 
-  | Réglage | Sorties en anglais | CER médian vs humain | Part ≤ 0.4 |
+## IVOD pseudo-labeling (running since 2026-10-29)
+- Source: `OpenFormosa/parliament`, 308,521 clips, **1,299 h**, 10–20 s, sessions 2020-09 → 2026-04. **License CC BY-NC 4.0** (non-commercial).
+- Human text is edited and loosely aligned at clip boundaries (median CER 0.22 vs upstream ASR). It is used as a **filtering signal**, not as a target.
+- **Unintended translation**: with `-l zh-TW` or the official prompts, the teacher translates 20–44% of IVOD clips into English. Test on 200 clips:
+
+  | Setting | English outputs | Median CER vs human | Share ≤ 0.4 |
   |---|---|---|---|
-  | aucun | 88/200 | 0.47 | 44 % |
-  | `-l zh` | 54 | 0.36 | 57 % |
-  | P2 (anglais, « Mandarin TW ») | 39 | 0.35 | 59 % |
-  | P3 (officiel verbatim) | 74 | 0.42 | 47 % |
-  | **P4 (prompt en chinois)** | **0** | **0.29** | **81 %** |
+  | none | 88/200 | 0.47 | 44% |
+  | `-l zh` | 54 | 0.36 | 57% |
+  | P2 (English, "Mandarin TW") | 39 | 0.35 | 59% |
+  | P3 (official verbatim) | 74 | 0.42 | 47% |
+  | **P4 (Chinese prompt)** | **0** | **0.29** | **81%** |
 
-  P4 : `请将这段语音逐字转写成中文文字。说话的语言是台湾的普通话，可能夹杂英文单词；英文单词保留原文。不要翻译。只输出转写内容。`
-- Débit sur GPU1 : RTFx ≈ 166, soit environ 10 h pour 1 299 h (décodage audio compris).
-- Ensuite : réévaluer CV/TT avec P4, puis appliquer le filtre combiné (accord avec le texte humain et accord avec v3).
+  P4: `请将这段语音逐字转写成中文文字。说话的语言是台湾的普通话，可能夹杂英文单词；英文单词保留原文。不要翻译。只输出转写内容。`
+- Throughput on GPU1: RTFx ≈ 120–190, i.e. ~10 h for 1,299 h (audio decoding included).
+- Next: re-evaluate CV/TT with P4, then apply the combined filter (agreement with human text and with v3).
+
+## Data plan (inventory 2026-10-29)
+Downloading now (~25 GB): `ky552/ML2021_ASR_ST`, `andybi7676/ntuml2021_long`, `voidful/hung-yi_lee` (NTU ML lectures, Taiwan Mandarin with dense English terms), `DynamicSuperb/Code-switchSpeechRecognition_NTUML2021` (CS eval), `adi-gov-tw/Taiwan-Tongues-ASR-CE-dataset-en` (TW-accented English replay).
+
+Next candidates: `espnet/yodas2` zh000 (60 GB, CC-BY-3.0, mostly zh-CN, needs TW filtering), `georgechang8/ASCEND_CLEAN` (CS eval, HK accent), GigaSpeech M + LibriSpeech-360 (English replay), `formospeech/matbn` (TW broadcast, gated).
+
+Skipped: WorldSpeech zh_tw and `lianghsun/ly-ivod-asr-zhtw` (likely duplicates of the parliament audio), Emilia ZH (size, zh-CN accent).
