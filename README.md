@@ -174,3 +174,12 @@ Consequences:
 - **v3 was fine-tuned on IVOD (NC)**, so v4 restarts from the NVIDIA base streaming 0.6B (license to confirm), not from v3. v3 stays as a comparison baseline and filter signal only.
 - New data sources: Common Voice zh-TW/en, yodas2 zh/en (filtered for TW accent and CS, pseudo-labeled by the teacher), LibriSpeech, and synthetic CS from a commercially licensed TTS.
 - A commercially clean CS eval set must be built (e.g. from yodas2 CS clips, hand-corrected).
+
+## Commercially usable data: status (2026-10-29)
+- **yodas2 zh000** (CC BY 3.0): 418 h in total. `scripts/select_yodas2.py` keeps videos with mostly Traditional subtitles, no Simplified-only characters and no Cantonese markers: **193 h of likely TW Mandarin** (630 of 2,196 videos). Only ~2 h are CS-rich by subtitle English density. YouTube subtitles often drop English, so teacher relabeling (P4) should surface more CS. Audio download is running (60 GB).
+- **Hub search** for permissive zh/en CS speech found nothing usable: SEAME, ASCEND, CS-Dialogue and NTU ML are all NC, SA or unclear.
+- **CS therefore comes mainly from synthesis**:
+  - text: zh-TW sentences with English terms, written by an LLM whose terms allow it, plus CS lines from teacher-labeled yodas2;
+  - audio: an Apache-2.0 TTS (e.g. CosyVoice2; check that the weight license allows commercial use) with reference voices from CC0 Common Voice zh-TW speakers;
+  - cap at 15–30% of the mix, and validate on a real CS eval set (hand-corrected yodas2 CS clips).
+- English: LibriSpeech (CC BY 4.0), Common Voice en (CC0), yodas2 en000 (CC BY 3.0).
