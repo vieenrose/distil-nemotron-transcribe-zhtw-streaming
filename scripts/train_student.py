@@ -52,6 +52,7 @@ sources = [(load_manifest(m["path"]), m["weight"]) for m in cfg["train"]]
 for (rows, w), m in zip(sources, cfg["train"]):
     print(f"{m['path']}: {len(rows)} utts {sum(r['duration'] for r in rows)/3600:.1f} h weight {w}", flush=True)
 tok = proc.tokenizer
+LMAP = lambda l: cfg.get("lang_map", {}).get(l, cfg.get("force_lang") or l)
 UNK = tok.unk_token_id
 
 
@@ -76,7 +77,7 @@ def sample_batch():
         if cfg.get("speed_perturb") and random.random() < 0.5:
             f = random.choice([0.9, 1.1])
             wav = torchaudio.functional.resample(torch.from_numpy(wav), int(16000 * f), 16000).numpy()
-        batch.append((wav, ids, r.get("lang", "zh-TW")))
+        batch.append((wav, ids, LMAP(r.get("lang", "zh-TW"))))
         total += len(wav) / 16000
 
 
@@ -108,12 +109,14 @@ def step_loss(batch, lookahead):
         dec = model.decoder(dec_in.to(dev))
     elen = model.encoder._get_subsampling_output_length(x["attention_mask"].sum(-1)).to(dev)
     labels, tlen = labels.to(dev), tlen.to(dev)
-    total = 0.0
+    total, ntok = 0.0, 0
     for k in range(enc.shape[0]):
         T, U = int(elen[k]), int(tlen[k])
-        total = total + checkpoint(utt_loss, enc[k, :T], dec[k, :U + 1], labels[k, :U], tlen[k], elen[k],
-                                   use_reentrant=False)
-    return total / tlen.sum()
+        l = checkpoint(utt_loss, enc[k, :T], dec[k, :U + 1], labels[k, :U], tlen[k], elen[k], use_reentrant=False)
+        if not torch.isfinite(l) or l.item() / U > cfg.get("max_tok_loss", 15.0):
+            continue  # misaligned / bad pseudo-label: skip
+        total, ntok = total + l, ntok + U
+    return total / max(ntok, 1) if ntok else None
 
 
 # ---------------- eval
@@ -127,7 +130,7 @@ def evaluate(lang="zh-TW", lookahead=None):
         refs, hyps = [], []
         for r in rows:
             wav, _ = sf.read(r["audio_filepath"], dtype="float32")
-            x = proc(wav, sampling_rate=16000, language=r.get("lang", lang)).to(dev)
+            x = proc(wav, sampling_rate=16000, language=LMAP(r.get("lang", lang))).to(dev)
             if lookahead is not None:
                 x["num_lookahead_tokens"] = lookahead
             with torch.autocast(dev, dtype=torch.bfloat16):
@@ -156,8 +159,10 @@ for step in range(1, steps + 1):
         for p in model.encoder.parameters():
             p.requires_grad = True
     for _ in range(accum):
-        loss = step_loss(sample_batch(), random.choice(LOOKAHEADS)) / accum
-        loss.backward(); run += loss.item()
+        loss = step_loss(sample_batch(), random.choice(LOOKAHEADS))
+        if loss is None:
+            continue
+        (loss / accum).backward(); run += loss.item() / accum
     torch.nn.utils.clip_grad_norm_(params, cfg.get("clip", 1.0))
     opt.step(); sched.step(); opt.zero_grad(set_to_none=True)
     if step % cfg.get("log_every", 50) == 0:

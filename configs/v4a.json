@@ -1,0 +1,6 @@
+{"init": "nvidia/nemotron-3.5-asr-streaming-0.6b", "force_lang": "zh-CN",
+ "out_dir": "/media/big-disk-2/distil-zhtw/runs/v4a",
+ "train": [{"path": "/media/big-disk-2/distil-zhtw/manifests/yodas2_tw.jsonl", "weight": 0.75}, {"path": "/media/big-disk-2/distil-zhtw/manifests/cv_zhtw.jsonl", "weight": 0.25}],
+ "eval": {"cv": "/media/big-disk-2/distil-zhtw/eval/cv120/manifest.jsonl", "tt": "/media/big-disk-2/distil-zhtw/eval/tt100/manifest.jsonl"},
+ "lr": 3e-5, "warmup": 300, "steps": 6000, "max_batch_sec": 160, "speed_perturb": true,
+ "eval_every": 1000, "log_every": 50, "eval_at_start": false}
