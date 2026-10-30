@@ -201,8 +201,11 @@ cv1k = 424 CV16 test clips, speakers and sentences disjoint from all training da
 | v4e | + TTS zh/CS, FLEURS | 23.36 | ~12.3 | 15.23 | 42.0 / 53.2 | 3.74 |
 | v4f | v4e without TTS zh | 23.89 | ~12.6 | 15.49 | 42.8 / 53.2 | 3.84 |
 | v4g | more TTS (zh 5.7 h, CS 12.9 h), gain augmentation | 22.3–23.2 | ~12.0 | 15.21 | 42.0 / 53.7 | ~3.7 |
+| v4h | v4g + 30k steps, lr 8e-5 | ~23 | 10.7–11.4 | 16.02 | 41.0 / 51.4 | 3.5 |
+| **avg(v4g, v4h)** | uniform weight average | **22.36** | **10.92** | **15.03** | **43.4 / 54.1** | 3.74 |
 
 Findings:
 - TTS zh helps (v4f is worse than v4e on cv1k and CS200), and teacher-verified TTS CS lifted English recall from ~31 to ~42.
 - cv1k errors are mostly homophone substitutions (她/他, 妳/你, 再/在); the quietest quartile of clips (RMS < 0.04) has CER 30 vs ~21 elsewhere, hence the gain augmentation.
 - v4e–v4g sit on a plateau: mixture changes now move scores less than eval noise.
+- The long run (v4h) traded CS for TT; averaging it with v4g (`scripts/avg_ckpt.py`) beats both on every set. Current best: `runs/avg_gh`.
