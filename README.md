@@ -163,6 +163,10 @@ Skipped: WorldSpeech zh_tw and `lianghsun/ly-ivod-asr-zhtw` (likely duplicates o
 | LibriSpeech | CC BY 4.0 | ✅ train (attribution) |
 | yodas2 | CC BY 3.0 | ✅ train (attribution) |
 | Teacher outputs (Nemotron-3.5-Transcribe) | OpenMDW-1.1 | ✅ pseudo-labels |
+| Granary-v2 zh labels (FLEURS cmn, `code_switched_text`) | OpenMDW-1.1 | ✅ train / TTS text |
+| FLEURS cmn audio | CC BY 4.0 | ✅ train (attribution) |
+| CV22 zh-TW `validated_sentences` / `other` | CC0 | ✅ TTS text / teacher-verified audio |
+| Fun-CosyVoice3-0.5B (TTS) | Apache-2.0 | ✅ synthetic zh / CS speech |
 | ASCEND_CLEAN | CC BY-SA 4.0 | ⚠️ eval only (not in training, to avoid share-alike on weights) |
 | Taiwan-Tongues (`adi-gov-tw/*`) | "other", unclear | ❌ excluded from training; TT100 kept only as a local benchmark for comparison with v3 |
 | `OpenFormosa/parliament` (IVOD) | CC BY-NC 4.0 | ❌ excluded |
@@ -183,3 +187,22 @@ Consequences:
   - audio: an Apache-2.0 TTS (e.g. CosyVoice2; check that the weight license allows commercial use) with reference voices from CC0 Common Voice zh-TW speakers;
   - cap at 15–30% of the mix, and validate on a real CS eval set (hand-corrected yodas2 CS clips).
 - English: LibriSpeech (CC BY 4.0), Common Voice en (CC0), yodas2 en000 (CC BY 3.0).
+
+## v4 results (2026-10-30)
+All v4 models start from the NVIDIA base streaming 0.6B and use only the data above. Targets are encoded with the native SentencePiece model from the `.nemo` (the HF `tokenizer.json` splits Latin text differently, which broke English in v4a/v4b).
+
+cv1k = 424 CV16 test clips, speakers and sentences disjoint from all training data and TTS text (CV120 is too small to rank runs). CS200 = held-out yodas2 CS clips.
+
+| Model | Change | cv1k CER | TT100 CER | CS200 MER | en recall / prec. | Libri WER |
+|---|---|---|---|---|---|---|
+| v3 (NC, reference) | | – | 14.85 | 17.09 | 31.2 / – | – |
+| v4c | SentencePiece targets | 24.54 | 15.7 | 15.12 | 31.8 / 42.9 | 3.6 |
+| v4d | + CV22-other, more steps | 23.57 | ~12.2 | 15.39 | 41.0 / 52.9 | ~4.1 |
+| v4e | + TTS zh/CS, FLEURS | 23.36 | ~12.3 | 15.23 | 42.0 / 53.2 | 3.74 |
+| v4f | v4e without TTS zh | 23.89 | ~12.6 | 15.49 | 42.8 / 53.2 | 3.84 |
+| v4g | more TTS (zh 5.7 h, CS 12.9 h), gain augmentation | 22.3–23.2 | ~12.0 | 15.21 | 42.0 / 53.7 | ~3.7 |
+
+Findings:
+- TTS zh helps (v4f is worse than v4e on cv1k and CS200), and teacher-verified TTS CS lifted English recall from ~31 to ~42.
+- cv1k errors are mostly homophone substitutions (她/他, 妳/你, 再/在); the quietest quartile of clips (RMS < 0.04) has CER 30 vs ~21 elsewhere, hence the gain augmentation.
+- v4e–v4g sit on a plateau: mixture changes now move scores less than eval noise.
