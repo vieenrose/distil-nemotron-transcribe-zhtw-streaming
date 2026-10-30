@@ -85,6 +85,11 @@ def sample_batch():
         if cfg.get("speed_perturb") and random.random() < 0.5:
             f = random.choice([0.9, 1.1])
             wav = torchaudio.functional.resample(torch.from_numpy(wav), int(16000 * f), 16000).numpy()
+        if cfg.get("gain_perturb", True) and random.random() < 0.3:
+            wav = wav * (10 ** random.uniform(-1.3, 0.5))  # ~0.05x-3.2x: cover very quiet eval clips
+            peak = max(float(wav.max()), -float(wav.min()))
+            if peak > 1.0:
+                wav = wav / peak
         batch.append((wav, ids, LMAP(r.get("lang", "zh-TW"))))
         total += len(wav) / 16000
 

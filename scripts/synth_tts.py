@@ -25,8 +25,11 @@ t2s = OpenCC("t2s"); EN = re.compile(r"[A-Za-z]{2,}"); HAN = re.compile(r"[ä¸€-é
 key = lambda t: re.sub(r"[^\w]", "", t2s.convert(t))
 
 banned = set()
-for e in ["cv120", "tt100", "cs200"]:
-    banned |= {key(json.loads(l)["text"]) for l in open(f"{STORE}/eval/{e}/manifest.jsonl")}
+for e in ["cv120", "tt100", "cs200", "cv1k", "libri100"]:
+    try:
+        banned |= {key(json.loads(l)["text"]) for l in open(f"{STORE}/eval/{e}/manifest.jsonl")}
+    except FileNotFoundError:
+        pass
 
 if kind == "zh":
     texts = [r["sentence"] for r in csv.DictReader(open(f"{STORE}/raw/cv22_zhtw/validated_sentences.tsv"),
