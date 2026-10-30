@@ -203,6 +203,8 @@ cv1k = 424 CV16 test clips, speakers and sentences disjoint from all training da
 | v4g | more TTS (zh 5.7 h, CS 12.9 h), gain augmentation | 22.3–23.2 | ~12.0 | 15.21 | 42.0 / 53.7 | ~3.7 |
 | v4h | v4g + 30k steps, lr 8e-5 | ~23 | 10.7–11.4 | 16.02 | 41.0 / 51.4 | 3.5 |
 | **avg(v4g, v4h)** | uniform weight average | **22.36** | **10.92** | **15.03** | **43.4 / 54.1** | 3.74 |
+| v4i (lr 3e-5 from avg) best | 10k steps | 22.98 | 10.55 | — | — | 3.55 |
+| avg(avg_gh, v4i) | weight average | 23.15 | 11.66 | 14.93 | 44.5 / 56.1 | 3.46 |
 
 Findings:
 - TTS zh helps (v4f is worse than v4e on cv1k and CS200), and teacher-verified TTS CS lifted English recall from ~31 to ~42.
