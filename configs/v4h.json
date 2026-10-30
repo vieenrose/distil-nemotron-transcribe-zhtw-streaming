@@ -1,0 +1,57 @@
+{
+ "init": "/media/big-disk-2/distil-zhtw/runs/v4g/best",
+ "out_dir": "/media/big-disk-2/distil-zhtw/runs/v4h",
+ "train": [
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/yodas2_tw_train.jsonl",
+   "weight": 0.37
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/cv_zhtw.jsonl",
+   "weight": 0.11
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/cv22_other.jsonl",
+   "weight": 0.13
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/fleurs_cmn.jsonl",
+   "weight": 0.05
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/tts_zh_ok.jsonl",
+   "weight": 0.15
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/tts_cs_ok.jsonl",
+   "weight": 0.06
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/tts_gcs_ok.jsonl",
+   "weight": 0.03
+  },
+  {
+   "path": "/media/big-disk-2/distil-zhtw/manifests/libri100.jsonl",
+   "weight": 0.1
+  }
+ ],
+ "eval": {
+  "cv": "/media/big-disk-2/distil-zhtw/eval/cv120/manifest.jsonl",
+  "tt": "/media/big-disk-2/distil-zhtw/eval/tt100/manifest.jsonl",
+  "cs200": "/media/big-disk-2/distil-zhtw/eval/cs200/manifest.jsonl",
+  "libri100": "/media/big-disk-2/distil-zhtw/eval/libri100/manifest.jsonl",
+  "cv1k": "/media/big-disk-2/distil-zhtw/eval/cv1k/manifest.jsonl"
+ },
+ "lr": 8e-05,
+ "warmup": 500,
+ "steps": 30000,
+ "max_batch_sec": 160,
+ "speed_perturb": true,
+ "eval_every": 2000,
+ "log_every": 50,
+ "eval_at_start": false,
+ "lang_map": {
+  "zh-TW": "zh-CN"
+ },
+ "sp_model": "/media/big-disk-2/distil-zhtw/raw/base_nemo/427ad33c6285472cb01c3eb843d2309d_tokenizer.model"
+}
