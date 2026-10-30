@@ -27,7 +27,7 @@ ADIR, HYP = Path(f"{STORE}/audio/tts/{kind}"), Path(f"{STORE}/teacher_labels/tts
 if cmd == "label":
     HYP.mkdir(parents=True, exist_ok=True)
     subprocess.run([BIN, "transcribe", str(ADIR), "--model", MODEL, "--instruction", PROMPT,
-                    "--output-dir", str(HYP)], check=True, stdout=subprocess.DEVNULL,
+                    "--output-dir", str(HYP)], check=False, stdout=subprocess.DEVNULL,  # exits 1 when labels already exist
                    stderr=open(f"{STORE}/logs/pl_tts_{kind}.err", "w"))
 else:
     n = k = 0; h = 0.0; seen = set()
