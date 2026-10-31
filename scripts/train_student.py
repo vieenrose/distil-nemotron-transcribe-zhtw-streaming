@@ -177,10 +177,16 @@ for step in range(1, steps + 1):
         for p in model.encoder.parameters():
             p.requires_grad = True
     for _ in range(accum):
-        loss = step_loss(sample_batch(), random.choice(LOOKAHEADS))
-        if loss is None:
-            continue
-        (loss / accum).backward(); run += loss.item() / accum
+        try:
+            loss = step_loss(sample_batch(), random.choice(LOOKAHEADS))
+            if loss is None:
+                continue
+            (loss / accum).backward(); run += loss.item() / accum
+        except (torch.OutOfMemoryError, RuntimeError) as ex:  # rare long, dense utt: T x U x V joint too big
+            if not isinstance(ex, torch.OutOfMemoryError) and "torch_call_dispatcher" not in str(ex):
+                raise  # torchaudio rnnt_loss surfaces CUDA OOM as this RuntimeError
+            loss = None; opt.zero_grad(set_to_none=True); torch.cuda.empty_cache()
+            print(f"step {step} OOM, batch skipped", flush=True)
     torch.nn.utils.clip_grad_norm_(params, cfg.get("clip", 1.0))
     opt.step(); sched.step(); opt.zero_grad(set_to_none=True)
     if step % cfg.get("log_every", 50) == 0:
