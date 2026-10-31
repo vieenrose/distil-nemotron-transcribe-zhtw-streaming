@@ -207,9 +207,11 @@ cv1k = 424 CV16 test clips, speakers and sentences disjoint from all training da
 | avg(avg_gh, v4i) | weight average | 23.15 | 11.66 | 14.93 | 44.5 / 56.1 | 3.46 |
 | v4j (+13.4 h TTS zh, OOM at step 7.1k) best@4k | 15k steps planned | 23.83 | 10.67 | — | — | 4.07 |
 | avg(avg_gh, v4j) | weight average | 22.42 | 10.92 | 15.36 | 42.2 / 53.3 | 3.60 |
+| v4k (CV weight .11 → .30, OOM at ~4.5k) | from avg(v4g,v4h) | 22.9–23.7 | 11.8–13.3 | — | — | 3.5–3.8 |
 
 Findings:
 - TTS zh helps (v4f is worse than v4e on cv1k and CS200), and teacher-verified TTS CS lifted English recall from ~31 to ~42.
 - cv1k errors are mostly homophone substitutions (她/他, 妳/你, 再/在); the quietest quartile of clips (RMS < 0.04) has CER 30 vs ~21 elsewhere, hence the gain augmentation.
+- v3 (same 12k CV clips, plus IVOD) scores 20.53 on cv1k. Up-weighting CV to .30 (v4k) did not close the gap, so the CV weight is not the cause. avg(v3, avg_gh) reaches 20.41 / CS MER 14.53 but inherits IVOD, so it is not usable for the commercial model.
 - v4e–v4g sit on a plateau: mixture changes now move scores less than eval noise.
 - The long run (v4h) traded CS for TT; averaging it with v4g (`scripts/avg_ckpt.py`) beats both on every set. Current best: `runs/avg_gh`.
